@@ -1,6 +1,6 @@
 import { BorshCoder, EventParser } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import idlRaw from "../target/idl/liquidation_lens.json";
+import idlRaw from "@/lib/idl.json";
 const idl = (idlRaw as any).default || idlRaw;
 
 const RPC = "https://api.devnet.solana.com";

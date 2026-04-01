@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { BorshCoder } from "@coral-xyz/anchor"
-import idl from "@/target/idl/liquidation_lens.json"
+import idl from "@/lib/idl.json"
 import { HERMES_BASE, PROGRAM_ID, SOLANA_DEVNET_RPC } from "@/lib/constants"
 
 const PYTH_ROUTER_BASE = "https://pyth-lazer-0.dourolabs.app"

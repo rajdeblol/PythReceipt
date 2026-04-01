@@ -2,7 +2,7 @@ import { Connection, PublicKey, SystemProgram, ComputeBudgetProgram } from "@sol
 import { AnchorProvider, Program, BN, Idl } from "@coral-xyz/anchor"
 import { PROGRAM_ID, SOLANA_DEVNET_RPC } from "./constants"
 
-import idl from "../target/idl/liquidation_lens.json"
+import idl from "@/lib/idl.json"
 
 export function getConnection() {
   return new Connection(SOLANA_DEVNET_RPC, "confirmed")
