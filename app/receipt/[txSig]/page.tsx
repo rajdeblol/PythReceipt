@@ -65,7 +65,32 @@ export default function ReceiptPage() {
         const res = await fetch(`/api/receipt?sig=${txSig}`)
         if (!res.ok) {
           const err = await res.json()
-          throw new Error(err.error || "Failed to fetch receipt API")
+          const errMsg = err.error || "Failed to fetch receipt API"
+          
+          // If the transaction failed specifically with account 3012 error
+          if (errMsg.includes("3012") || errMsg.includes("Account does not exist")) {
+             console.warn("[PythReceipt] API reported 3012 - Transaction failed because account was missing.")
+             // If wallet is connected, we can try to initialize now for future use
+             if (wallet.publicKey) {
+               const program = getProgram(wallet)
+               const [receiptPDA] = getLiquidationRecordPDA(wallet.publicKey)
+               try {
+                  console.log("[PythReceipt] attempting auto-init via API fallback...")
+                  await (program.methods as any).initialize()
+                    .accounts({
+                      user: wallet.publicKey,
+                      liquidationRecord: receiptPDA,
+                      systemProgram: SystemProgram.programId
+                    })
+                    .rpc()
+                  throw new Error("Your account was missing, but we've initialized it now! Please go back to the home page and try the liquidation again.")
+               } catch (initErr: any) {
+                  throw new Error("Transaction failed (Account missing). Tried to initialize but failed: " + (initErr?.message ?? initErr))
+               }
+             }
+             throw new Error("Your account is not initialized. Please connect your wallet to initialize it.")
+          }
+          throw new Error(errMsg)
         }
         const data: LiquidationReceipt = await res.json()
         
