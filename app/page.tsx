@@ -194,8 +194,8 @@ export default function HomePage() {
         price: lazerMarket.price,
         confidenceAbs: Math.abs(lazerMarket.confidence),
         confidencePct: (Math.abs(lazerMarket.confidence) / Math.abs(lazerMarket.price)) * 100,
-        bestBid: lazerMarket.bestBid ?? null,
-        bestAsk: lazerMarket.bestAsk ?? null,
+        bestBid: lazerMarket.bestBid || null,
+        bestAsk: lazerMarket.bestAsk || null,
       }
     }
     const hermes = await fetchCurrentPrice(selectedFeed.id)
@@ -608,11 +608,11 @@ export default function HomePage() {
                     </div>
                     <div>
                       <div className="text-[11px] text-gray-500">Best Bid</div>
-                      <div>{receipt.bestBid ? `$${formatMoney(receipt.bestBid, 4)}` : "--"}</div>
+                      <div>{receipt.bestBid !== null ? `$${formatMoney(receipt.bestBid, 4)}` : "--"}</div>
                     </div>
                     <div>
                       <div className="text-[11px] text-gray-500">Best Ask</div>
-                      <div>{receipt.bestAsk ? `$${formatMoney(receipt.bestAsk, 4)}` : "--"}</div>
+                      <div>{receipt.bestAsk !== null ? `$${formatMoney(receipt.bestAsk, 4)}` : "--"}</div>
                     </div>
                   </div>
 

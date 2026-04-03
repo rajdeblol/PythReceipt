@@ -74,8 +74,8 @@ export function usePythLazer(activeFeedId?: number) {
                 price: Number(price),
                 // Confidence comes in micro-units (10^8), scaling back to decimal
                 confidence: Number(confidence) / 1e8,
-                bestBid: Number(bestBidPrice || 0),
-                bestAsk: Number(bestAskPrice || 0),
+                bestBid: bestBidPrice ? Number(bestBidPrice) : 0,
+                bestAsk: bestAskPrice ? Number(bestAskPrice) : 0,
                 feedId: priceFeedId
               }
             }))
