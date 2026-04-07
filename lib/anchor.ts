@@ -39,6 +39,8 @@ export async function triggerLiquidation(
   const connection = program.provider.connection as Connection
   const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 })
 
+  await ensureLiquidationRecord(program, wallet, liquidationRecord)
+
   const tx = await (program.methods as any)
     .triggerLiquidation(priceIdHex, minPriceRaw)
     .accounts({
@@ -115,6 +117,53 @@ async function waitForConfirmed(connection: Connection, signature: string, timeo
   }
 
   return false
+}
+
+async function ensureLiquidationRecord(program: Program, wallet: PublicKey, liquidationRecord: PublicKey) {
+  const connection = program.provider.connection as Connection
+  const existing = await connection.getAccountInfo(liquidationRecord, "confirmed")
+  if (existing) {
+    return
+  }
+
+  const methods: any = program.methods as any
+  if (!methods?.initialize) {
+    return
+  }
+
+  try {
+    console.log("[PythReceipt] Initializing liquidation record PDA...")
+    const tx = await methods
+      .initialize()
+      .accounts({
+        user: wallet,
+        liquidationRecord,
+        systemProgram: SystemProgram.programId,
+      })
+      .transaction()
+
+    tx.feePayer = wallet
+    const latest = await connection.getLatestBlockhash("confirmed")
+    tx.recentBlockhash = latest.blockhash
+
+    const sig = await (program.provider.wallet as any).sendTransaction(tx, connection, {
+      skipPreflight: true,
+      preflightCommitment: "confirmed",
+      maxRetries: 5,
+    })
+    await waitForConfirmed(connection, sig, 120000)
+    console.log("[PythReceipt] liquidation record initialized:", sig)
+  } catch (e: any) {
+    const msg = e?.message ?? String(e)
+    if (
+      msg.includes("already in use") ||
+      msg.includes("already initialized") ||
+      msg.includes("custom program error: 0x0")
+    ) {
+      return
+    }
+    throw e
+  }
 }
 
 export interface LiquidationRecord {
