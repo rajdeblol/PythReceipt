@@ -1,4 +1,4 @@
-export const APP_NAME = "NEO RECEIPT"
+export const APP_NAME = "PythReceipt"
 export const APP_TAGLINE = "High-Fidelity Cryptographic Liquidation Proofs"
 export const PROGRAM_ID = "4JbvDU6ejse5QLhjDUrdLVjgfGGRick1byDtsJFWErxb"
 export const PYTH_RECEIVER_PROGRAM_ID = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"

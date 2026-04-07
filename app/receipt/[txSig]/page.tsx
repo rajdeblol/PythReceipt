@@ -6,12 +6,25 @@ import { useParams } from "next/navigation"
 import { SOLANA_EXPLORER_TX } from "@/lib/constants"
 import { LiquidationReceipt } from "@/lib/solana"
 
+interface FailedReceipt {
+  txSignature: string
+  market: string
+  timestampIso: string
+  price: number
+  confidence: number
+  confidencePct: number
+  bestBid: number | null
+  bestAsk: number | null
+  reason: string
+}
+
 export default function ReceiptPage() {
   const { txSig } = useParams<{ txSig: string }>()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<LiquidationReceipt | null>(null)
+  const [failedReceipt, setFailedReceipt] = useState<FailedReceipt | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -30,9 +43,29 @@ export default function ReceiptPage() {
           const errMsg = err.error || "Failed to fetch receipt API"
 
           if (errMsg.includes("3012")) {
-            throw new Error(
-              "This transaction failed on-chain, so no cryptographic receipt exists for this signature. Please trigger a new liquidation from the home page."
-            )
+            const disputeRes = await fetch("/api/dispute/check", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ signature: txSig }),
+            })
+            if (!disputeRes.ok) {
+              const fallbackErr = await disputeRes.json().catch(() => ({}))
+              throw new Error(fallbackErr.error || "Transaction failed on-chain and fallback receipt could not be generated.")
+            }
+            const dispute = await disputeRes.json()
+            if (!mounted) return
+            setFailedReceipt({
+              txSignature: txSig,
+              market: dispute.market || "UNKNOWN",
+              timestampIso: dispute.oracle?.timestampIso || new Date().toISOString(),
+              price: Number(dispute.oracle?.price || 0),
+              confidence: Number(dispute.oracle?.confidence || 0),
+              confidencePct: Number(dispute.oracle?.confidencePct || 0),
+              bestBid: dispute.oracle?.bestBid ?? null,
+              bestAsk: dispute.oracle?.bestAsk ?? null,
+              reason: "On-chain execution failed (Custom 3012), but oracle snapshot at tx time is preserved below.",
+            })
+            return
           }
           throw new Error(errMsg)
         }
@@ -196,6 +229,69 @@ export default function ReceiptPage() {
                 >
                   View on Solscan
                 </a>
+              </div>
+            </div>
+          )}
+
+          {failedReceipt && !receipt && (
+            <div className="space-y-4 font-mono text-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-gray-500 text-xs">Attempt Receipt ID</div>
+                  <div className="break-all">AR-{txSig.slice(0, 8)}...{txSig.slice(-8)}</div>
+                </div>
+                <span className="px-2 py-1 text-[11px] font-mono border rounded border-red-400/40 bg-red-400/10 text-red-300">FAILED</span>
+              </div>
+
+              <div className="text-red-300 text-xs">{failedReceipt.reason}</div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-gray-500 text-xs">Market</div>
+                  <div>{failedReceipt.market}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 text-xs">Timestamp</div>
+                  <div>{new Date(failedReceipt.timestampIso).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 text-xs">Oracle Price at Tx Time</div>
+                  <div className="text-[#00ff88] text-xl">${failedReceipt.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 text-xs">Confidence</div>
+                  <div>± ${failedReceipt.confidence.toLocaleString(undefined, { maximumFractionDigits: 6 })} ({failedReceipt.confidencePct.toFixed(4)}%)</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 text-xs">Best Bid</div>
+                  <div>{failedReceipt.bestBid !== null ? `$${failedReceipt.bestBid.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : "--"}</div>
+                </div>
+                <div>
+                  <div className="text-gray-500 text-xs">Best Ask</div>
+                  <div>{failedReceipt.bestAsk !== null ? `$${failedReceipt.bestAsk.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : "--"}</div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/5 flex flex-wrap gap-4 items-center">
+                <a
+                  href={`${SOLANA_EXPLORER_TX}/${txSig}?cluster=devnet`}
+                  className="text-purple-300 underline text-xs"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View on Solana Explorer
+                </a>
+                <a
+                  href={`https://solscan.io/tx/${txSig}?cluster=devnet`}
+                  className="text-emerald-300 underline text-xs"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View on Solscan
+                </a>
+                <Link href="/" className="inline-flex px-4 py-2 border border-white/15 bg-white/5 hover:bg-white/10 rounded-md text-xs font-mono">
+                  Trigger New Liquidation
+                </Link>
               </div>
             </div>
           )}
