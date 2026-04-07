@@ -63,9 +63,19 @@ async function fetchTxLogs(signature: string): Promise<string[]> {
 
   if (result.meta?.err) {
     const logs = result.meta.logMessages || [];
-    if (logs.some((l: string) => l.includes("PriceTooLow"))) throw new Error("Liquidation rejected: Price was too low (below your minimum).");
-    if (logs.some((l: string) => l.includes("PriceStale"))) throw new Error("Liquidation rejected: Price feed is stale.");
-    throw new Error(`On-chain error: ${JSON.stringify(result.meta.err)}`);
+    if (logs.some((l: string) => l.includes("PriceTooLow"))) {
+      throw new Error("Liquidation rejected: Price was too low (below your minimum).")
+    }
+    if (logs.some((l: string) => l.includes("PriceStale"))) {
+      throw new Error("Liquidation rejected: Price feed is stale.")
+    }
+    const errJson = JSON.stringify(result.meta.err)
+    if (errJson.includes('"Custom":3012')) {
+      throw new Error(
+        "Transaction failed on-chain (3012: account state not ready). No immutable liquidation receipt was created for this signature."
+      )
+    }
+    throw new Error(`On-chain error: ${errJson}`);
   }
 
   if (!result.meta?.logMessages) throw new Error("Transaction has no logs");

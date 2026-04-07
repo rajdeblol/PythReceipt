@@ -3,15 +3,11 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { useWallet } from "@solana/wallet-adapter-react"
-import { PublicKey, SystemProgram } from "@solana/web3.js"
 import { SOLANA_EXPLORER_TX } from "@/lib/constants"
 import { LiquidationReceipt } from "@/lib/solana"
-import { getProgram, getLiquidationRecordPDA } from "@/lib/anchor"
 
 export default function ReceiptPage() {
   const { txSig } = useParams<{ txSig: string }>()
-  const wallet = useWallet()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,68 +23,16 @@ export default function ReceiptPage() {
 
         if (!txSig) throw new Error("Missing transaction signature")
 
-        // 1. First ensure account is initialized (if wallet is connected)
-        if (wallet.publicKey) {
-          const program = getProgram(wallet);
-          const [receiptPDA] = getLiquidationRecordPDA(wallet.publicKey);
-
-          try {
-            // First try to fetch (Account name is liquidationRecord in our IDL)
-            await (program.account as any).liquidationRecord.fetch(receiptPDA);
-            console.log("[PythReceipt] account initialized, proceeding to fetch receipt");
-          } catch (e: any) {
-            const msg = e?.message ?? String(e);
-            if (msg.includes('Account does not exist') || msg.includes('3012')) {
-              console.warn("[PythReceipt] account 3012 - initializing now...");
-              try {
-                // Initialize first then we can fetch
-                await (program.methods as any).initialize()
-                  .accounts({
-                    user: wallet.publicKey,
-                    liquidationRecord: receiptPDA,
-                    systemProgram: SystemProgram.programId
-                  })
-                  .rpc();
-                console.log("[PythReceipt] initialization successful");
-              } catch (initErr: any) {
-                console.error("[PythReceipt] initialization failed:", initErr);
-                throw new Error("Failed to initialize on-chain record: " + (initErr?.message ?? initErr));
-              }
-            } else {
-              console.error("[PythReceipt] fetch account error:", e);
-              // continue anyway if it's not a 3012, or re-throw
-            }
-          }
-        }
-
-        // 2. Then fetch receipt data from API
+        // Fetch immutable receipt from tx signature
         const res = await fetch(`/api/receipt?sig=${txSig}`)
         if (!res.ok) {
           const err = await res.json()
           const errMsg = err.error || "Failed to fetch receipt API"
-          
-          // If the transaction failed specifically with account 3012 error
-          if (errMsg.includes("3012") || errMsg.includes("Account does not exist")) {
-             console.warn("[PythReceipt] API reported 3012 - Transaction failed because account was missing.")
-             // If wallet is connected, we can try to initialize now for future use
-             if (wallet.publicKey) {
-               const program = getProgram(wallet)
-               const [receiptPDA] = getLiquidationRecordPDA(wallet.publicKey)
-               try {
-                  console.log("[PythReceipt] attempting auto-init via API fallback...")
-                  await (program.methods as any).initialize()
-                    .accounts({
-                      user: wallet.publicKey,
-                      liquidationRecord: receiptPDA,
-                      systemProgram: SystemProgram.programId
-                    })
-                    .rpc()
-                  throw new Error("Your account was missing, but we've initialized it now! Please go back to the home page and try the liquidation again.")
-               } catch (initErr: any) {
-                  throw new Error("Transaction failed (Account missing). Tried to initialize but failed: " + (initErr?.message ?? initErr))
-               }
-             }
-             throw new Error("Your account is not initialized. Please connect your wallet to initialize it.")
+
+          if (errMsg.includes("3012")) {
+            throw new Error(
+              "This transaction failed on-chain, so no cryptographic receipt exists for this signature. Please trigger a new liquidation from the home page."
+            )
           }
           throw new Error(errMsg)
         }
@@ -109,7 +53,7 @@ export default function ReceiptPage() {
     return () => {
       mounted = false
     }
-  }, [txSig, wallet.publicKey])
+  }, [txSig])
 
   return (
     <main className="min-h-screen grid-bg scan-lines">
@@ -123,7 +67,14 @@ export default function ReceiptPage() {
           <div className="absolute -inset-[1px] bg-gradient-to-br from-purple-500/30 via-transparent to-emerald-500/30 rounded-[inherit] -z-10" />
           
           {loading && <div className="font-mono text-sm text-gray-400">Loading receipt...</div>}
-          {error && <div className="font-mono text-sm text-red-400">{error}</div>}
+          {error && (
+            <div className="space-y-3">
+              <div className="font-mono text-sm text-red-400">{error}</div>
+              <Link href="/" className="inline-flex px-4 py-2 border border-white/15 bg-white/5 hover:bg-white/10 rounded-md text-xs font-mono">
+                Back to Trigger Page
+              </Link>
+            </div>
+          )}
 
           {receipt && (
             <div className="space-y-4 font-mono text-sm">
