@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { BorshCoder } from "@coral-xyz/anchor"
+import bs58 from "bs58"
 import idl from "@/lib/idl.json"
 import { HERMES_BASE, PROGRAM_ID, SOLANA_DEVNET_RPC } from "@/lib/constants"
 
@@ -20,6 +21,36 @@ const PRICE_ID_TO_MARKET: Record<string, string> = {
 
 function normalizePriceId(id: string) {
   return id.startsWith("0x") ? id.slice(2).toLowerCase() : id.toLowerCase()
+}
+
+function normalizeAccountKey(k: any): string {
+  if (typeof k === "string") return k
+  if (k?.pubkey) return String(k.pubkey)
+  return String(k)
+}
+
+function getAllAccountKeys(tx: any): string[] {
+  const staticKeys = (tx?.transaction?.message?.accountKeys ?? []).map(normalizeAccountKey)
+  const loadedWritable = (tx?.meta?.loadedAddresses?.writable ?? []).map(normalizeAccountKey)
+  const loadedReadonly = (tx?.meta?.loadedAddresses?.readonly ?? []).map(normalizeAccountKey)
+  return [...staticKeys, ...loadedWritable, ...loadedReadonly]
+}
+
+function decodeTriggerPriceIdFromData(dataBase58: string): string | null {
+  try {
+    const raw = Buffer.from(bs58.decode(dataBase58))
+    if (raw.length < 12) return null
+    const strLen = raw.readUInt32LE(8)
+    if (strLen <= 0 || strLen > 128) return null
+    const start = 12
+    const end = start + strLen
+    if (end > raw.length) return null
+    const maybePriceId = raw.subarray(start, end).toString("utf8")
+    if (/^(0x)?[0-9a-fA-F]{64}$/.test(maybePriceId)) return normalizePriceId(maybePriceId)
+  } catch {
+    return null
+  }
+  return null
 }
 
 function toDecimal(mantissa: string | number | null | undefined, exponent: number | null | undefined): number | null {
@@ -50,18 +81,34 @@ async function fetchTx(signature: string) {
 
 function decodePriceIdHexFromTx(tx: any): string | null {
   const coder = new BorshCoder(idl as any)
-  const accountKeys = tx.transaction.message.accountKeys.map((k: any) =>
-    typeof k === "string" ? k : k.pubkey?.toString?.() ?? String(k)
-  )
-  for (const ix of tx.transaction.message.instructions ?? []) {
+  const accountKeys = getAllAccountKeys(tx)
+
+  const allInstructions = [
+    ...(tx?.transaction?.message?.instructions ?? []),
+    ...((tx?.meta?.innerInstructions ?? []).flatMap((x: any) => x.instructions ?? [])),
+  ]
+
+  for (const ix of allInstructions) {
     if (typeof ix.data !== "string") continue
-    const programId = accountKeys[ix.programIdIndex]
+    const programId = ix.programId ?? accountKeys[ix.programIdIndex]
     if (programId !== PROGRAM_ID) continue
-    const decoded: any = coder.instruction.decode(ix.data, "base58")
-    if (decoded?.name === "triggerLiquidation" && decoded?.data?.priceIdHex) {
-      return normalizePriceId(decoded.data.priceIdHex)
+
+    try {
+      const decoded: any = coder.instruction.decode(ix.data, "base58")
+      if (decoded?.name === "triggerLiquidation" && decoded?.data?.priceIdHex) {
+        return normalizePriceId(decoded.data.priceIdHex)
+      }
+    } catch {
+      const manual = decodeTriggerPriceIdFromData(ix.data)
+      if (manual) return manual
     }
   }
+
+  const logs = String((tx?.meta?.logMessages ?? []).join(" ")).toLowerCase()
+  for (const knownId of Object.keys(PRICE_ID_TO_FEED_ID)) {
+    if (logs.includes(knownId)) return knownId
+  }
+
   return null
 }
 
@@ -148,7 +195,25 @@ export async function POST(req: NextRequest) {
 
     const priceIdHex = decodePriceIdHexFromTx(tx)
     if (!priceIdHex) {
-      return NextResponse.json({ error: "Could not decode price feed from transaction instructions." }, { status: 422 })
+      const timestampUs = String(blockTimeSec * 1_000_000)
+      return NextResponse.json({
+        signature,
+        market: "UNKNOWN",
+        priceIdHex: null,
+        blockTimeSec,
+        oracle: {
+          source: "unresolved",
+          timestampUs,
+          timestampIso: new Date(blockTimeSec * 1000).toISOString(),
+          price: 0,
+          confidence: 0,
+          confidencePct: 0,
+          bestBid: null,
+          bestAsk: null,
+        },
+        verdict: "UNKNOWN",
+        verdictMessage: "Oracle feed could not be decoded from this transaction.",
+      })
     }
 
     const market = PRICE_ID_TO_MARKET[priceIdHex] ?? "UNKNOWN"

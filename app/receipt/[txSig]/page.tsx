@@ -49,8 +49,19 @@ export default function ReceiptPage() {
               body: JSON.stringify({ signature: txSig }),
             })
             if (!disputeRes.ok) {
-              const fallbackErr = await disputeRes.json().catch(() => ({}))
-              throw new Error(fallbackErr.error || "Transaction failed on-chain and fallback receipt could not be generated.")
+              if (!mounted) return
+              setFailedReceipt({
+                txSignature: txSig,
+                market: "UNKNOWN",
+                timestampIso: new Date().toISOString(),
+                price: 0,
+                confidence: 0,
+                confidencePct: 0,
+                bestBid: null,
+                bestAsk: null,
+                reason: "On-chain execution failed (Custom 3012).",
+              })
+              return
             }
             const dispute = await disputeRes.json()
             if (!mounted) return
